@@ -9,7 +9,7 @@ BOT_KARAKTERI = """
 Sen samimi, esprili ve yardımsever bir asistansın.
 Cevaplarını kısa, akıcı ve doğal tut.
 """
-YARATICILIK = 0.7  # 0.0 (daha ciddi/net) ile 1.0 (daha yaratıcı/esnek) arası
+YARATICILIK = 0.3  # 0.0 (daha ciddi/net) ile 1.0 (daha yaratıcı/esnek) arası
 # ---------------------------
 
 st.set_page_config(page_title=BOT_ADI, page_icon="🤖")
