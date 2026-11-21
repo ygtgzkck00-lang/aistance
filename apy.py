@@ -1,21 +1,23 @@
-from datetime import date
-import os
-import streamlit as st
-from google import genai
-from google.genai import types
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 
-# --- BAUN ASİSTAN AYARLARI ---
+namespace BaunAsistan
+{
+    class Program
+    {
+        // --- BAUN ASİSTAN AYARLARI ---
+        const string BOT_ADI = "BAUN Asistan";
+        const string BOT_ACIKLAMA = "Balıkesir Üniversitesi öğrencileri için yapay zekâ destekli asistan. (Günlük kullanım hakkı: 3 soru)";
+        const int GUNLUK_SORU_LIMITI = 3;
+        const string GEMINI_MODEL = "gemini-2.5-flash";
 
-BOT_ADI = "BAUN Asistan"
-
-BOT_ACIKLAMA = (
-    "Balıkesir Üniversitesi öğrencileri için "
-    "yapay zekâ destekli asistan. (Günlük kullanım hakkı: 3 soru)"
-)
-
-GUNLUK_SORU_LIMITI = 3
-
-BOT_KARAKTERI = """
+        const string BOT_KARAKTERI = @"
 Sen BAUN Asistan'sın. Balıkesir Üniversitesi (BAUN)
 öğrencilerine yardımcı olan, Türkçe konuşan,
 samimi, açık ve güvenilir bir üniversite asistanısın.
@@ -26,172 +28,218 @@ akademik takvim, kayıt, dersler, sınavlar, not sistemi,
 hizmetleri hakkında soruları yanıtla.
 
 ÖNEMLİ DOĞRULUK KURALLARI:
-
 - Kesin olmayan bilgileri uydurma.
 - Güncel bilgiler için Google Search aracını kullan.
-- Özellikle BAUN'un resmî internet sitesini ve resmî
-  duyurularını öncelikli kaynak olarak değerlendir.
-- Başvuru tarihleri, ücretler, kontenjanlar ve yönetmelikler
-  gibi değişebilen bilgileri mümkün olduğunca doğrula.
+- Özellikle BAUN'un resmî internet sitesini ve resmî duyurularını öncelikli kaynak olarak değerlendir.
+- Başvuru tarihleri, ücretler, kontenjanlar ve yönetmelikler gibi değişebilen bilgileri mümkün olduğunca doğrula.
 - Bilgiyi doğrulayamazsan bunu açıkça belirt.
 - Tahminlerini kesin bilgi gibi sunma.
 - Üniversite dışındaki genel sorulara da yardımcı ol.
 - Kısa, anlaşılır ve doğal cevaplar ver.
-- Kullanıcıya Türkçe cevap ver.
-"""
+- Kullanıcıya Türkçe cevap ver.";
 
-GEMINI_MODEL = "gemini-2.5-flash"
+        static readonly HttpClient httpClient = new HttpClient();
 
-# ----------------------------
+        static async Task Main(string[] args)
+        {
+            Console.OutputEncoding = Encoding.UTF8;
+            Console.InputEncoding = Encoding.UTF8;
 
-st.set_page_config(
-    page_title=BOT_ADI,
-    page_icon="🎓"
-)
+            Console.WriteLine($"🎓 {BOT_ADI}");
+            Console.WriteLine(BOT_ACIKLAMA);
+            Console.WriteLine(new string('-', 60));
 
-st.title(f"🎓 {BOT_ADI}")
-st.caption(BOT_ACIKLAMA)
+            // API Anahtarını ortam değişkeninden al (veya doğrudan aşağıya yapıştırabilirsin)
+            string apiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY");
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                Console.Write("GEMINI_API_KEY ortam değişkeni bulunamadı. Lütfen API anahtarını gir: ");
+                apiKey = Console.ReadLine()?.Trim();
+            }
 
-# API ANAHTARI
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("Hata: Geçerli bir API anahtarı girilmedi. Program kapatılıyor.");
+                Console.ResetColor();
+                return;
+            }
 
-api_key = None
+            // Günlük soru sayacı ve sohbet geçmişi
+            string kullanimTarihi = DateTime.Today.ToString("yyyy-MM-dd");
+            int soruSayisi = 0;
+            var messages = new List<ChatMessage>();
 
-try:
-    api_key = st.secrets.get("GEMINI_API_KEY")
-except Exception:
-    api_key = None
+            while (true)
+            {
+                string bugun = DateTime.Today.ToString("yyyy-MM-dd");
+                if (kullanimTarihi != bugun)
+                {
+                    kullanimTarihi = bugun;
+                    soruSayisi = 0;
+                }
 
-if not api_key:
-    api_key = os.getenv("GEMINI_API_KEY")
+                int kalanHak = Math.Max(0, GUNLUK_SORU_LIMITI - soruSayisi);
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine($"\n📊 Bugünkü kalan soru hakkın: {kalanHak} / {GUNLUK_SORU_LIMITI}");
+                Console.ResetColor();
 
-if not api_key:
-    st.error(
-        "GEMINI_API_KEY bulunamadı. "
-        "Streamlit Cloud > Settings > Secrets "
-        "bölümüne API anahtarını ekle."
-    )
-    st.stop()
+                if (kalanHak <= 0)
+                {
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine("Günlük 3 soru kullanım hakkın doldu. Yarın tekrar deneyebilirsin.");
+                    Console.ResetColor();
+                    break;
+                }
 
-client = genai.Client(api_key=api_key)
+                Console.Write("\nBAUN hakkında merak ettiğini sor (Çıkmak için 'cikis' yaz): ");
+                string prompt = Console.ReadLine()?.Trim();
 
-# GÜNLÜK SORU SAYACI VE SOHBET GEÇMİŞİ
+                if (string.IsNullOrEmpty(prompt))
+                    continue;
 
-bugun = date.today().isoformat()
+                if (prompt.Equals("cikis", StringComparison.OrdinalIgnoreCase) ||
+                    prompt.Equals("çıkış", StringComparison.OrdinalIgnoreCase))
+                    break;
 
-if "kullanim_tarihi" not in st.session_state or st.session_state.kullanim_tarihi != bugun:
-    st.session_state.kullanim_tarihi = bugun
-    st.session_state.soru_sayisi = 0
+                soruSayisi++;
+                messages.Add(new ChatMessage { Role = "user", Content = prompt });
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                Console.WriteLine("🔍 BAUN Asistan interneti araştırıyor...");
+                Console.ResetColor();
 
-kalan_hak = max(0, GUNLUK_SORU_LIMITI - st.session_state.soru_sayisi)
-st.info(f"📊 Bugünkü kalan soru hakkın: **{kalan_hak} / {GUNLUK_SORU_LIMITI}**")
+                try
+                {
+                    var (answer, kaynaklar) = await GeminiSorAsync(apiKey, messages);
 
-# ÖNCEKİ MESAJLARI GÖSTER
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine($"\n🤖 {BOT_ADI}:");
+                    Console.ResetColor();
+                    Console.WriteLine(answer);
 
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-        if message.get("sources"):
-            kaynak_metni = "\n\n### 🔎 Yararlanılan Kaynaklar\n"
-            for kaynak in message["sources"]:
-                kaynak_metni += f"- [{kaynak['title']}]({kaynak['url']})\n"
-            st.markdown(kaynak_metni)
+                    if (kaynaklar.Count > 0)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.WriteLine("\n🔎 Yararlanılan Kaynaklar:");
+                        Console.ResetColor();
+                        foreach (var k in kaynaklar)
+                        {
+                            Console.WriteLine($"- {k.Title}: {k.Url}");
+                        }
+                    }
 
-# GOOGLE SEARCH KAYNAKLARINI AL
+                    // Sadece saf metin yanıtını geçmişe kaydet (kaynak linkleri hariç)
+                    messages.Add(new ChatMessage { Role = "model", Content = answer });
+                }
+                catch (Exception ex)
+                {
+                    soruSayisi = Math.Max(0, soruSayisi - 1);
+                    if (messages.Count > 0 && messages[^1].Role == "user")
+                    {
+                        messages.RemoveAt(messages.Count - 1);
+                    }
 
-def kaynaklari_al(response):
-    kaynaklar = []
-    try:
-        for candidate in response.candidates or []:
-            metadata = candidate.grounding_metadata
-            if not metadata:
-                continue
-            for chunk in metadata.grounding_chunks or []:
-                web = getattr(chunk, "web", None)
-                if web:
-                    url = getattr(web, "uri", None)
-                    title = getattr(web, "title", None)
-                    if url and url not in [k["url"] for k in kaynaklar]:
-                        kaynaklar.append({
-                            "title": title or "Web kaynağı",
-                            "url": url
-                        })
-    except Exception:
-        pass
-    return kaynaklar
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"\nGemini API isteği başarısız oldu.\nTeknik hata: {ex.Message}");
+                    Console.ResetColor();
+                }
+            }
+        }
 
-# YENİ MESAJI İŞLE
+        static async Task<(string Answer, List<WebSource> Sources)> GeminiSorAsync(string apiKey, List<ChatMessage> history)
+        {
+            string url = $"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={apiKey}";
 
-if kalan_hak <= 0:
-    st.warning("Günlük 3 soru kullanım hakkın doldu. Yarın tekrar deneyebilirsin.")
-    prompt = st.chat_input(
-        "Günlük soru limitin doldu (3/3)...",
-        disabled=True
-    )
-else:
-    prompt = st.chat_input("BAUN hakkında merak ettiğini sor...")
+            // API isteği gövdesi (System Instruction + Geçmiş + Google Search Grounding)
+            var requestBody = new
+            {
+                system_instruction = new
+                {
+                    parts = new[] { new { text = BOT_KARAKTERI } }
+                },
+                contents = history.Select(m => new
+                {
+                    role = m.Role,
+                    parts = new[] { new { text = m.Content } }
+                }).ToArray(),
+                tools = new[]
+                {
+                    new { google_search = new { } }
+                }
+            };
 
-if prompt:
-    if st.session_state.soru_sayisi >= GUNLUK_SORU_LIMITI:
-        st.warning("Günlük 3 soru kullanım hakkın doldu. Yarın tekrar deneyebilirsin.")
-        st.stop()
+            string jsonPayload = JsonSerializer.Serialize(requestBody);
+            using var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
-    st.session_state.soru_sayisi += 1
+            HttpResponseMessage response = await httpClient.PostAsync(url, content);
+            string responseJson = await response.Content.ReadAsStringAsync();
 
-    st.session_state.messages.append({
-        "role": "user",
-        "content": prompt
-    })
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new Exception($"HTTP {(int)response.StatusCode}: {responseJson}");
+            }
 
-    with st.chat_message("user"):
-        st.markdown(prompt)
+            using JsonDocument doc = JsonDocument.Parse(responseJson);
+            JsonElement root = doc.RootElement;
 
-    contents = [
-        types.Content(
-            role="user" if message["role"] == "user" else "model",
-            parts=[types.Part.from_text(text=message["content"])],
-        )
-        for message in st.session_state.messages
-    ]
+            string answerText = "Şu an yanıt oluşturamadım. Lütfen tekrar dene.";
+            var kaynaklar = new List<WebSource>();
 
-    with st.chat_message("assistant"):
-        with st.spinner("BAUN Asistan interneti araştırıyor..."):
-            try:
-                response = client.models.generate_content(
-                    model=GEMINI_MODEL,
-                    contents=contents,
-                    config=types.GenerateContentConfig(
-                        system_instruction=BOT_KARAKTERI,
-                        tools=[
-                            types.Tool(
-                                google_search=types.GoogleSearch()
-                            )
-                        ],
-                    ),
-                )
+            if (root.TryGetProperty("candidates", out JsonElement candidates) && candidates.GetArrayLength() > 0)
+            {
+                JsonElement firstCandidate = candidates[0];
 
-                answer = response.text or (
-                    "Şu an yanıt oluşturamadım. Lütfen tekrar dene."
-                )
-                kaynaklar = kaynaklari_al(response)
+                // Model cevabını al
+                if (firstCandidate.TryGetProperty("content", out JsonElement contentElem) &&
+                    contentElem.TryGetProperty("parts", out JsonElement parts) &&
+                    parts.GetArrayLength() > 0)
+                {
+                    var sb = new StringBuilder();
+                    foreach (JsonElement part in parts.EnumerateArray())
+                    {
+                        if (part.TryGetProperty("text", out JsonElement textElem))
+                        {
+                            sb.Append(textElem.GetString());
+                        }
+                    }
+                    if (sb.Length > 0)
+                        answerText = sb.ToString();
+                }
 
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": answer,
-                    "sources": kaynaklar
-                })
+                // Google Search kaynaklarını (groundingMetadata) ayrıştır
+                if (firstCandidate.TryGetProperty("groundingMetadata", out JsonElement metadata) &&
+                    metadata.TryGetProperty("groundingChunks", out JsonElement chunks))
+                {
+                    foreach (JsonElement chunk in chunks.EnumerateArray())
+                    {
+                        if (chunk.TryGetProperty("web", out JsonElement web))
+                        {
+                            string uri = web.TryGetProperty("uri", out JsonElement u) ? u.GetString() : null;
+                            string title = web.TryGetProperty("title", out JsonElement t) ? t.GetString() : "Web kaynağı";
 
-                st.rerun()
+                            if (!string.IsNullOrEmpty(uri) && !kaynaklar.Any(k => k.Url == uri))
+                            {
+                                kaynaklar.Add(new WebSource { Title = title, Url = uri });
+                            }
+                        }
+                    }
+                }
+            }
 
-            except Exception as error:
-                st.session_state.soru_sayisi = max(0, st.session_state.soru_sayisi - 1)
-                if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
-                    st.session_state.messages.pop()
-                st.error(
-                    "Gemini API isteği başarısız oldu.\n\n"
-                    "Model adını, API anahtarını ve "
-                    "Google Search desteğini kontrol et.\n\n"
-                    f"Teknik hata: {error}"
-                )
+            return (answerText, kaynaklar);
+        }
+    }
+
+    class ChatMessage
+    {
+        public string Role { get; set; }
+        public string Content { get; set; }
+    }
+
+    class WebSource
+    {
+        public string Title { get; set; }
+        public string Url { get; set; }
+    }
+}
