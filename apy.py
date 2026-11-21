@@ -93,42 +93,34 @@ st.info(f"📊 Bugünkü kalan soru hakkın: **{kalan_hak} / {GUNLUK_SORU_LIMITI
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
+        if message.get("sources"):
+            kaynak_metni = "\n\n### 🔎 Yararlanılan Kaynaklar\n"
+            for kaynak in message["sources"]:
+                kaynak_metni += f"- [{kaynak['title']}]({kaynak['url']})\n"
+            st.markdown(kaynak_metni)
 
 # GOOGLE SEARCH KAYNAKLARINI AL
 
 def kaynaklari_al(response):
-
     kaynaklar = []
-
     try:
         for candidate in response.candidates or []:
-
             metadata = candidate.grounding_metadata
-
             if not metadata:
                 continue
-
             for chunk in metadata.grounding_chunks or []:
-
                 web = getattr(chunk, "web", None)
-
                 if web:
                     url = getattr(web, "uri", None)
                     title = getattr(web, "title", None)
-
-                    if url and url not in [
-                        kaynak["url"] for kaynak in kaynaklar
-                    ]:
+                    if url and url not in [k["url"] for k in kaynaklar]:
                         kaynaklar.append({
                             "title": title or "Web kaynağı",
                             "url": url
                         })
-
     except Exception:
         pass
-
     return kaynaklar
-
 
 # YENİ MESAJI İŞLE
 
@@ -159,76 +151,44 @@ if prompt:
     contents = [
         types.Content(
             role="user" if message["role"] == "user" else "model",
-            parts=[
-                types.Part.from_text(
-                    text=message["content"]
-                )
-            ],
+            parts=[types.Part.from_text(text=message["content"])],
         )
         for message in st.session_state.messages
     ]
 
     with st.chat_message("assistant"):
-
-        with st.spinner(
-            "BAUN Asistan interneti araştırıyor..."
-        ):
-
+        with st.spinner("BAUN Asistan interneti araştırıyor..."):
             try:
-
                 response = client.models.generate_content(
-
                     model=GEMINI_MODEL,
-
                     contents=contents,
-
                     config=types.GenerateContentConfig(
-
                         system_instruction=BOT_KARAKTERI,
-
                         tools=[
                             types.Tool(
                                 google_search=types.GoogleSearch()
                             )
                         ],
-
                     ),
-
                 )
 
                 answer = response.text or (
-                    "Şu an yanıt oluşturamadım. "
-                    "Lütfen tekrar dene."
+                    "Şu an yanıt oluşturamadım. Lütfen tekrar dene."
                 )
-
-                # KAYNAKLARI AL
-
                 kaynaklar = kaynaklari_al(response)
-
-                # CEVABI VE KAYNAKLARI BİRLEŞTİR
-
-                if kaynaklar:
-
-                    answer += "\n\n### 🔎 Yararlanılan Kaynaklar\n"
-
-                    for kaynak in kaynaklar:
-
-                        answer += (
-                            f"- [{kaynak['title']}]"
-                            f"({kaynak['url']})\n"
-                        )
-
-                st.markdown(answer)
 
                 st.session_state.messages.append({
                     "role": "assistant",
-                    "content": answer
+                    "content": answer,
+                    "sources": kaynaklar
                 })
 
                 st.rerun()
 
             except Exception as error:
                 st.session_state.soru_sayisi = max(0, st.session_state.soru_sayisi - 1)
+                if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
+                    st.session_state.messages.pop()
                 st.error(
                     "Gemini API isteği başarısız oldu.\n\n"
                     "Model adını, API anahtarını ve "
