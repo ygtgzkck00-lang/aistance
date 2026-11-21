@@ -62,4 +62,4 @@ except Exception:
     api_key = None
 
 if not api_key:
-    api_key = os.getenv("GEMINI_
+    api_key = os.getenv("GEMINI_API_KEY")
